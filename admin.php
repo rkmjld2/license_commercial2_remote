@@ -2,7 +2,9 @@
 
 /*
 ===========================================================
- LICENSE ADMIN V3
+ LICENSE ADMIN V2
+ Independent Start / End Date-Time
+ CALENDAR + ACTUAL APPLICATION-USE
 ===========================================================
 */
 
@@ -16,9 +18,7 @@ require_once 'db.php';
 $conn->query("SET time_zone = '+05:30'");
 
 
-$user_id = $_POST['user_id']
-    ?? $_GET['user_id']
-    ?? 'USER001';
+$user_id = $_POST['user_id'] ?? $_GET['user_id'] ?? 'USER001';
 
 $message = '';
 
@@ -36,117 +36,116 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
     /* =====================================================
-       START / SAVE LICENSE
+       START / RESET LICENSE
     ===================================================== */
 
     if ($action === 'start') {
 
         /*
-         * -------------------------------------------------
-         * CALENDAR MODE
-         * -------------------------------------------------
+         * Start and End are selected independently.
+         *
+         * HTML datetime-local gives:
+         *
+         * YYYY-MM-DDTHH:MM
          */
 
-        if ($license_mode === 'CALENDAR') {
+        $start_input =
+            trim($_POST['start_datetime'] ?? '');
 
-            $start_date =
-                trim($_POST['start_date'] ?? '');
+        $end_input =
+            trim($_POST['end_datetime'] ?? '');
 
-            $start_time =
-                trim($_POST['start_time'] ?? '');
 
-            $end_date =
-                trim($_POST['end_date'] ?? '');
+        if ($start_input === '' || $end_input === '') {
 
-            $end_time =
-                trim($_POST['end_time'] ?? '');
+            $message =
+                "Please select both Start Date/Time and End Date/Time.";
+
+        }
+        else {
+
+            /*
+             * Convert T to space for MySQL DATETIME.
+             */
+
+            $started_at =
+                str_replace('T', ' ', $start_input);
+
+            $expires_at =
+                str_replace('T', ' ', $end_input);
 
 
             /*
-             * Check that all four fields are supplied.
+             * Convert selected dates to timestamps.
+             *
+             * PHP timezone is Asia/Kolkata.
+             */
+
+            $start_timestamp =
+                strtotime($started_at);
+
+            $end_timestamp =
+                strtotime($expires_at);
+
+
+            /*
+             * Check date/time validity.
              */
 
             if (
-                $start_date === '' ||
-                $start_time === '' ||
-                $end_date === '' ||
-                $end_time === ''
+                $start_timestamp === false ||
+                $end_timestamp === false
             ) {
 
                 $message =
-                    "Please select Start Date, Start Time, "
-                    . "End Date and End Time.";
+                    "Invalid Start or End Date/Time.";
 
-            } else {
+            }
+            elseif ($end_timestamp <= $start_timestamp) {
 
-                /*
-                 * Convert HTML date/time values
-                 * into MySQL DATETIME.
-                 */
+                $message =
+                    "End Date/Time must be later than Start Date/Time.";
 
-                $started_at =
-                    $start_date . ' ' . $start_time . ':00';
-
-                $expires_at =
-                    $end_date . ' ' . $end_time . ':00';
-
+            }
+            else {
 
                 /*
-                 * Validate dates using PHP/IST.
+                 * Calculate total window duration.
+                 *
+                 * This is used for CALENDAR mode and
+                 * also stored for information in USAGE mode.
                  */
 
-                $start_timestamp =
-                    strtotime($started_at);
-
-                $end_timestamp =
-                    strtotime($expires_at);
+                $duration_seconds =
+                    $end_timestamp - $start_timestamp;
 
 
-                if (
-                    $start_timestamp === false ||
-                    $end_timestamp === false
-                ) {
+                /*
+                 * START / RESET
+                 *
+                 * Both CALENDAR and USAGE now use
+                 * independently selected Start/End.
+                 */
 
-                    $message =
-                        "Invalid date or time selected.";
-
-                }
-                elseif ($end_timestamp <= $start_timestamp) {
-
-                    $message =
-                        "End date/time must be later than "
-                        . "Start date/time.";
-
-                }
-                else {
-
-                    /*
-                     * Calculate total calendar duration.
-                     *
-                     * This is stored in duration_seconds
-                     * for information only.
-                     */
-
-                    $duration_seconds =
-                        $end_timestamp - $start_timestamp;
+                $stmt = $conn->prepare(
+                    "UPDATE licenses
+                     SET
+                        status = 'ON',
+                        license_mode = ?,
+                        duration_seconds = ?,
+                        used_seconds = 0,
+                        started_at = ?,
+                        expires_at = ?,
+                        last_seen_at = NULL
+                     WHERE user_id = ?"
+                );
 
 
-                    $stmt = $conn->prepare(
-                        "UPDATE licenses
-                         SET
-                            status = 'ON',
-                            license_mode = 'CALENDAR',
-                            duration_seconds = ?,
-                            used_seconds = 0,
-                            started_at = ?,
-                            expires_at = ?,
-                            last_seen_at = NULL
-                         WHERE user_id = ?"
-                    );
-
+                if ($stmt) {
 
                     $stmt->bind_param(
-                        "isss",
+                        "sisss",
+                        $license_mode,
                         $duration_seconds,
                         $started_at,
                         $expires_at,
@@ -154,92 +153,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
 
-                    $stmt->execute();
+                    if ($stmt->execute()) {
+
+                        if ($license_mode === 'USAGE') {
+
+                            $label =
+                                'Actual application-use time';
+
+                        }
+                        else {
+
+                            $label =
+                                'Calendar time';
+                        }
+
+
+                        $message =
+                            "$user_id started: $label from " .
+                            $started_at .
+                            " to " .
+                            $expires_at .
+                            ".";
+
+                    }
+                    else {
+
+                        $message =
+                            "Database update failed.";
+                    }
+
 
                     $stmt->close();
 
+                }
+                else {
 
                     $message =
-                        "$user_id calendar license saved. "
-                        . "Start: "
-                        . $started_at
-                        . " | End: "
-                        . $expires_at;
+                        "Database statement error.";
                 }
             }
-        }
-
-
-        /*
-         * -------------------------------------------------
-         * ACTUAL APPLICATION-USE MODE
-         * -------------------------------------------------
-         */
-
-        else {
-
-            $duration =
-                max(
-                    1,
-                    (int)(
-                        $_POST['duration'] ?? 1
-                    )
-                );
-
-
-            $unit =
-                $_POST['unit'] ?? 'HOURS';
-
-
-            $multiplier = 3600;
-
-
-            if ($unit === 'MINUTES') {
-
-                $multiplier = 60;
-
-            }
-            elseif ($unit === 'DAYS') {
-
-                $multiplier = 86400;
-            }
-
-
-            $duration_seconds =
-                $duration * $multiplier;
-
-
-            $stmt = $conn->prepare(
-                "UPDATE licenses
-                 SET
-                    status = 'ON',
-                    license_mode = 'USAGE',
-                    duration_seconds = ?,
-                    used_seconds = 0,
-                    started_at = NOW(),
-                    expires_at = NULL,
-                    last_seen_at = NULL
-                 WHERE user_id = ?"
-            );
-
-
-            $stmt->bind_param(
-                "is",
-                $duration_seconds,
-                $user_id
-            );
-
-
-            $stmt->execute();
-
-            $stmt->close();
-
-
-            $message =
-                "$user_id started: Actual "
-                . "application-use for "
-                . $duration . " "
-                . strtolower($unit) . ".";
         }
     }
 
@@ -253,7 +205,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /*
          * ON changes ONLY status.
          *
-         * Existing dates and usage are preserved.
+         * It does not change the selected
+         * Start / End time.
          */
 
         $stmt = $conn->prepare(
@@ -288,7 +241,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         /*
          * OFF changes ONLY status.
          *
-         * Dates and usage are preserved.
+         * Usage is NOT reset.
          */
 
         $stmt = $conn->prepare(
@@ -342,15 +295,13 @@ $license =
 $stmt->close();
 
 
-/* =========================================================
-   USER DOES NOT EXIST
-========================================================= */
+/* User does not exist */
 
 if (!$license) {
 
     die(
-        "User ID not found: "
-        . htmlspecialchars($user_id)
+        "User ID not found: " .
+        htmlspecialchars($user_id)
     );
 }
 
@@ -360,7 +311,36 @@ $current_mode =
 
 
 /* =========================================================
-   HELPER
+   DEFAULT VALUES FOR DATETIME INPUTS
+========================================================= */
+
+$start_value = '';
+
+$end_value = '';
+
+
+if (!empty($license['started_at'])) {
+
+    $start_value =
+        date(
+            'Y-m-d\TH:i',
+            strtotime($license['started_at'])
+        );
+}
+
+
+if (!empty($license['expires_at'])) {
+
+    $end_value =
+        date(
+            'Y-m-d\TH:i',
+            strtotime($license['expires_at'])
+        );
+}
+
+
+/* =========================================================
+   HELPER FUNCTIONS
 ========================================================= */
 
 function h($value)
@@ -373,9 +353,7 @@ function h($value)
 }
 
 
-/* =========================================================
-   DISPLAY DURATION
-========================================================= */
+/* Display duration */
 
 function show_duration($seconds)
 {
@@ -388,8 +366,8 @@ function show_duration($seconds)
     ) {
 
         return
-            ($seconds / 86400)
-            . " d";
+            ($seconds / 86400) .
+            " d";
     }
 
 
@@ -399,8 +377,8 @@ function show_duration($seconds)
     ) {
 
         return
-            ($seconds / 3600)
-            . " h";
+            ($seconds / 3600) .
+            " h";
     }
 
 
@@ -408,14 +386,12 @@ function show_duration($seconds)
         round(
             $seconds / 60,
             1
-        )
-        . " min";
+        ) .
+        " min";
 }
 
 
-/* =========================================================
-   DISPLAY USED TIME
-========================================================= */
+/* Display used time */
 
 function show_used($seconds)
 {
@@ -423,76 +399,8 @@ function show_used($seconds)
         round(
             ((int)$seconds) / 60,
             1
-        )
-        . " min";
-}
-
-
-/* =========================================================
-   HTML DATE/TIME VALUES
-========================================================= */
-
-$start_date_value = '';
-
-$start_time_value = '';
-
-$end_date_value = '';
-
-$end_time_value = '';
-
-
-if (
-    $current_mode === 'CALENDAR'
-) {
-
-    if (!empty($license['started_at'])) {
-
-        $start_timestamp =
-            strtotime(
-                $license['started_at']
-            );
-
-
-        if ($start_timestamp !== false) {
-
-            $start_date_value =
-                date(
-                    'Y-m-d',
-                    $start_timestamp
-                );
-
-            $start_time_value =
-                date(
-                    'H:i',
-                    $start_timestamp
-                );
-        }
-    }
-
-
-    if (!empty($license['expires_at'])) {
-
-        $end_timestamp =
-            strtotime(
-                $license['expires_at']
-            );
-
-
-        if ($end_timestamp !== false) {
-
-            $end_date_value =
-                date(
-                    'Y-m-d',
-                    $end_timestamp
-                );
-
-            $end_time_value =
-                date(
-                    'H:i',
-                    $end_timestamp
-                );
-        }
-    }
+        ) .
+        " min";
 }
 
 ?>
@@ -505,9 +413,7 @@ if (
 
 <meta charset="UTF-8">
 
-<title>
-License Control Panel — V3
-</title>
+<title>License Admin V2</title>
 
 
 <style>
@@ -519,18 +425,14 @@ body {
     text-align: center;
 
     margin: 30px;
-
-    background: #f7f7f7;
 }
 
 
 .box {
 
-    max-width: 1100px;
+    max-width: 1150px;
 
     margin: auto;
-
-    background: white;
 
     border: 1px solid #ccc;
 
@@ -550,10 +452,9 @@ button {
 }
 
 
-input[type="date"],
-input[type="time"] {
+input[type="datetime-local"] {
 
-    min-width: 145px;
+    min-width: 220px;
 }
 
 
@@ -602,111 +503,30 @@ th {
 }
 
 
-.calendar-box {
+.datetime-row {
 
-    margin: 20px auto;
+    margin-top: 15px;
 
-    padding: 15px;
-
-    border: 1px solid #ccc;
-
-    border-radius: 8px;
-
-    max-width: 800px;
-
-    background: #fafafa;
+    margin-bottom: 15px;
 }
 
 
-.calendar-row {
-
-    margin: 10px;
-}
-
-
-.calendar-row label {
-
-    display: inline-block;
-
-    width: 110px;
+.datetime-row label {
 
     font-weight: bold;
 
-    text-align: right;
-
-    margin-right: 8px;
-}
-
-
-#usage-box {
-
-    margin: 15px;
-}
-
-
-.note {
-
-    color: #555;
-
-    font-size: 14px;
-
-    margin: 10px;
+    margin-left: 10px;
 }
 
 </style>
 
-
-<script>
-
-function updateModeFields()
-{
-    var mode =
-        document.getElementById(
-            "license_mode"
-        ).value;
-
-
-    var calendarBox =
-        document.getElementById(
-            "calendar-box"
-        );
-
-
-    var usageBox =
-        document.getElementById(
-            "usage-box"
-        );
-
-
-    if (mode === "CALENDAR") {
-
-        calendarBox.style.display =
-            "block";
-
-        usageBox.style.display =
-            "none";
-
-    } else {
-
-        calendarBox.style.display =
-            "none";
-
-        usageBox.style.display =
-            "block";
-    }
-}
-
-</script>
-
 </head>
 
 
-<body onload="updateModeFields()">
+<body>
 
 
-<h1>
-License Control Panel — V3
-</h1>
+<h1>License Control Panel — V2</h1>
 
 
 <div class="box">
@@ -728,7 +548,6 @@ USER_ID
     type="text"
     name="user_id"
     value="<?= h($user_id) ?>"
-    required
 >
 
 
@@ -741,12 +560,7 @@ Mode
 </label>
 
 
-<select
-    name="license_mode"
-    id="license_mode"
-    onchange="updateModeFields()"
->
-
+<select name="license_mode">
 
 <option
     value="CALENDAR"
@@ -754,7 +568,7 @@ Mode
         ? 'selected'
         : '' ?>
 >
-Calendar time
+    Calendar time
 </option>
 
 
@@ -764,146 +578,53 @@ Calendar time
         ? 'selected'
         : '' ?>
 >
-Actual application-use time
+    Actual application-use time
 </option>
-
 
 </select>
 
 
+<br>
+
+
 <!-- =====================================================
-     CALENDAR SETTINGS
+     INDEPENDENT START DATE / TIME
 ===================================================== -->
 
-<div
-    id="calendar-box"
-    class="calendar-box"
->
-
-
-<h3>
-Calendar License Period
-</h3>
-
-
-<div class="calendar-row">
+<div class="datetime-row">
 
 <label>
-Start Date:
+Start Date &amp; Time
 </label>
 
 
 <input
-    type="date"
-    name="start_date"
-    value="<?= h($start_date_value) ?>"
+    type="datetime-local"
+    name="start_datetime"
+    value="<?= h($start_value) ?>"
+    required
 >
-
-
-<label>
-Start Time:
-</label>
-
-
-<input
-    type="time"
-    name="start_time"
-    value="<?= h($start_time_value) ?>"
->
-
-</div>
-
-
-<div class="calendar-row">
-
-<label>
-End Date:
-</label>
-
-
-<input
-    type="date"
-    name="end_date"
-    value="<?= h($end_date_value) ?>"
->
-
-
-<label>
-End Time:
-</label>
-
-
-<input
-    type="time"
-    name="end_time"
-    value="<?= h($end_time_value) ?>"
->
-
-</div>
-
-
-<div class="note">
-
-Select the exact date and time when the
-license should start and end.
-
-All times are India Standard Time (IST).
-
-</div>
 
 </div>
 
 
 <!-- =====================================================
-     USAGE SETTINGS
+     INDEPENDENT END DATE / TIME
 ===================================================== -->
 
-<div
-    id="usage-box"
->
-
+<div class="datetime-row">
 
 <label>
-Duration
+End Date &amp; Time
 </label>
 
 
 <input
-    type="number"
-    name="duration"
-    value="1"
-    min="1"
+    type="datetime-local"
+    name="end_datetime"
+    value="<?= h($end_value) ?>"
+    required
 >
-
-
-<select name="unit">
-
-
-<option value="HOURS">
-Hours
-</option>
-
-
-<option value="MINUTES">
-Minutes
-</option>
-
-
-<option value="DAYS">
-Days
-</option>
-
-
-</select>
-
-
-<div class="note">
-
-Actual application-use time is counted only
-while the application is actively checking
-the license.
-
-</div>
 
 </div>
 
@@ -912,7 +633,7 @@ the license.
 
 
 <!-- =====================================================
-     START / SAVE
+     START / RESET
 ===================================================== -->
 
 <button
@@ -920,9 +641,7 @@ the license.
     name="action"
     value="start"
 >
-
-START / SAVE LICENSE
-
+    START / RESET LICENSE
 </button>
 
 
@@ -935,9 +654,7 @@ START / SAVE LICENSE
     name="action"
     value="on"
 >
-
-ON
-
+    ON
 </button>
 
 
@@ -950,9 +667,7 @@ ON
     name="action"
     value="off"
 >
-
-REMOTE OFF
-
+    REMOTE OFF
 </button>
 
 
@@ -982,7 +697,6 @@ REMOTE OFF
 
 <table>
 
-
 <tr>
 
 <th>User</th>
@@ -991,7 +705,7 @@ REMOTE OFF
 
 <th>Mode</th>
 
-<th>Duration</th>
+<th>Window</th>
 
 <th>Used</th>
 
@@ -1005,7 +719,6 @@ REMOTE OFF
 
 
 <tr>
-
 
 <td>
 <?= h($license['user_id']) ?>
@@ -1063,14 +776,13 @@ REMOTE OFF
 ) ?>
 </td>
 
-
 </tr>
-
 
 </table>
 
 
 </div>
+
 
 </body>
 
