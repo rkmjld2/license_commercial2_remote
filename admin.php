@@ -526,7 +526,7 @@ th {
 <body>
 
 
-<h1>License Control Panel — V2</h1>
+<h1>License Control Panel — V3</h1>
 
 
 <div class="box">
