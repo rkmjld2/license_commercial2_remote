@@ -24,7 +24,7 @@ $user_id = "USER001";
 --------------------------------------------------------- */
 
 $license_url =
-    "https://license-commercial-remote.onrender.com/license_check.php";
+    "https://license-commercial2-remote.onrender.com/license_check.php";
 
 
 /* ---------------------------------------------------------
