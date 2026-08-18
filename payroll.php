@@ -1,4 +1,3 @@
-```php
 <?php
 require_once __DIR__ . "/license_guard.php";
 
@@ -127,4 +126,4 @@ Back to Main Application
 
 </body>
 </html>
-```
+
