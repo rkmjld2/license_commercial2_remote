@@ -2,94 +2,643 @@
 
 /*
 ===========================================================
- LICENSE ADMIN V2
- Independent Start / End Date-Time
- CALENDAR + ACTUAL APPLICATION-USE
+ LICENSE ADMIN V3
+ PASSWORD PROTECTED
+===========================================================
+
+Features:
+
+    1. Administrator password protection
+    2. Password stored in Render Environment Variable
+    3. CALENDAR license mode
+    4. ACTUAL APPLICATION-USE license mode
+    5. Independent Start Date/Time
+    6. Independent End Date/Time
+    7. START / RESET LICENSE
+    8. ON
+    9. REMOTE OFF
+   10. License information display
+   11. Logout
+
+IMPORTANT:
+
+The administrator password is NOT stored in this file.
+
+Render Environment Variable:
+
+    LICENSE_ADMIN_PASSWORD
+
+The customer application does NOT use this password.
+
+The customer application continues to call:
+
+    license_check.php
+
 ===========================================================
 */
 
-date_default_timezone_set("Asia/Kolkata");
 
-require_once 'db.php';
+/* =========================================================
+   TIMEZONE
+========================================================= */
+
+date_default_timezone_set(
+    "Asia/Kolkata"
+);
+
+
+/* =========================================================
+   SESSION
+========================================================= */
+
+session_start();
+
+
+/* =========================================================
+   ADMIN PASSWORD FROM ENVIRONMENT
+========================================================= */
+
+$admin_password =
+    getenv("LICENSE_ADMIN_PASSWORD");
+
+
+/*
+ * Environment variable must exist.
+ */
+
+if (
+    $admin_password === false ||
+    trim($admin_password) === ""
+) {
+
+    http_response_code(500);
+
+    die(
+        "LICENSE_ADMIN_PASSWORD is not configured."
+    );
+}
+
+
+/* =========================================================
+   LOGOUT
+========================================================= */
+
+if (
+    isset($_GET["logout"])
+) {
+
+    /*
+     * Destroy administrator session.
+     */
+
+    $_SESSION = [];
+
+
+    if (
+        ini_get("session.use_cookies")
+    ) {
+
+        $params =
+            session_get_cookie_params();
+
+
+        setcookie(
+            session_name(),
+            "",
+            time() - 42000,
+            $params["path"],
+            $params["domain"],
+            $params["secure"],
+            $params["httponly"]
+        );
+    }
+
+
+    session_destroy();
+
+
+    header(
+        "Location: admin.php"
+    );
+
+    exit;
+}
+
+
+/* =========================================================
+   ADMIN LOGIN
+========================================================= */
+
+$login_error = "";
+
+
+if (
+    $_SERVER["REQUEST_METHOD"] === "POST" &&
+    isset($_POST["admin_login"])
+) {
+
+    $entered_password =
+        $_POST["admin_password"] ?? "";
+
+
+    /*
+     * Compare entered password with
+     * Render Environment Variable.
+     *
+     * hash_equals() performs a timing-safe
+     * string comparison.
+     */
+
+    if (
+        hash_equals(
+            $admin_password,
+            $entered_password
+        )
+    ) {
+
+        /*
+         * New session ID after successful login.
+         */
+
+        session_regenerate_id(true);
+
+
+        $_SESSION[
+            "license_admin_authenticated"
+        ] = true;
+
+
+        header(
+            "Location: admin.php"
+        );
+
+        exit;
+
+    }
+    else {
+
+        $login_error =
+            "Invalid administrator password.";
+    }
+}
+
+
+/* =========================================================
+   CHECK ADMIN AUTHENTICATION
+========================================================= */
+
+if (
+    !isset(
+        $_SESSION[
+            "license_admin_authenticated"
+        ]
+    ) ||
+    $_SESSION[
+        "license_admin_authenticated"
+    ] !== true
+) {
+
+    ?>
+
+    <!DOCTYPE html>
+
+    <html lang="en">
+
+    <head>
+
+        <meta charset="UTF-8">
+
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1.0"
+        >
+
+        <title>
+            License Administrator Login
+        </title>
+
+
+        <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+
+            margin: 0;
+
+            padding: 20px;
+
+            font-family:
+                Arial,
+                Helvetica,
+                sans-serif;
+
+            background:
+                #f2f4f7;
+        }
+
+
+        .login-box {
+
+            width: 100%;
+
+            max-width: 420px;
+
+            margin: 80px auto;
+
+            background:
+                white;
+
+            padding: 30px;
+
+            border-radius:
+                12px;
+
+            box-shadow:
+                0 4px 15px
+                rgba(0,0,0,0.15);
+
+            text-align:
+                center;
+        }
+
+
+        h1 {
+
+            margin-top: 0;
+
+            color:
+                #1d3557;
+        }
+
+
+        .subtitle {
+
+            color:
+                #666;
+
+            margin-bottom:
+                25px;
+        }
+
+
+        .error {
+
+            background:
+                #f8d7da;
+
+            color:
+                #842029;
+
+            padding:
+                12px;
+
+            border-radius:
+                6px;
+
+            margin-bottom:
+                18px;
+
+            font-weight:
+                bold;
+
+            line-height:
+                1.5;
+        }
+
+
+        .form-group {
+
+            text-align:
+                left;
+
+            margin-bottom:
+                15px;
+        }
+
+
+        label {
+
+            display:
+                block;
+
+            font-weight:
+                bold;
+
+            margin-bottom:
+                6px;
+        }
+
+
+        input {
+
+            width:
+                100%;
+
+            padding:
+                12px;
+
+            border:
+                1px solid #aaa;
+
+            border-radius:
+                6px;
+
+            font-size:
+                16px;
+        }
+
+
+        button {
+
+            width:
+                100%;
+
+            padding:
+                12px;
+
+            border:
+                none;
+
+            border-radius:
+                6px;
+
+            background:
+                #0d6efd;
+
+            color:
+                white;
+
+            font-size:
+                16px;
+
+            cursor:
+                pointer;
+
+            margin-top:
+                10px;
+        }
+
+
+        button:hover {
+
+            opacity:
+                0.85;
+        }
+
+
+        .footer {
+
+            margin-top:
+                20px;
+
+            color:
+                #777;
+
+            font-size:
+                13px;
+        }
+
+        </style>
+
+    </head>
+
+
+    <body>
+
+
+    <div class="login-box">
+
+
+        <h1>
+            LICENSE ADMIN
+        </h1>
+
+
+        <div class="subtitle">
+
+            Administrator access only
+
+        </div>
+
+
+        <?php
+
+        if (
+            $login_error !== ""
+        ) {
+
+        ?>
+
+        <div class="error">
+
+            <?= htmlspecialchars(
+                $login_error,
+                ENT_QUOTES,
+                "UTF-8"
+            ) ?>
+
+        </div>
+
+        <?php
+
+        }
+
+        ?>
+
+
+        <form
+            method="POST"
+            action="admin.php"
+        >
+
+
+            <div class="form-group">
+
+
+                <label
+                    for="admin_password"
+                >
+                    Administrator Password
+                </label>
+
+
+                <input
+                    type="password"
+                    id="admin_password"
+                    name="admin_password"
+                    required
+                    autofocus
+                >
+
+
+            </div>
+
+
+            <button
+                type="submit"
+                name="admin_login"
+                value="1"
+            >
+                LOGIN
+            </button>
+
+
+        </form>
+
+
+        <div class="footer">
+
+            Authorized administrator only
+
+            <br>
+
+            Time zone:
+            Asia/Kolkata (IST)
+
+        </div>
+
+
+    </div>
+
+
+    </body>
+
+    </html>
+
+    <?php
+
+    exit;
+}
+
+
+/* =========================================================
+   LOAD DATABASE
+========================================================= */
+
+require_once "db.php";
+
 
 /*
  * Database session timezone = IST
  */
-$conn->query("SET time_zone = '+05:30'");
+
+$conn->query(
+    "SET time_zone = '+05:30'"
+);
 
 
-$user_id = $_POST['user_id'] ?? $_GET['user_id'] ?? 'USER001';
+/* =========================================================
+   USER ID
+========================================================= */
 
-$message = '';
+$user_id =
+    $_POST["user_id"]
+    ??
+    $_GET["user_id"]
+    ??
+    "USER001";
+
+
+$user_id =
+    trim($user_id);
+
+
+$message = "";
 
 
 /* =========================================================
    HANDLE BUTTON ACTIONS
 ========================================================= */
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if (
+    $_SERVER["REQUEST_METHOD"] === "POST"
+) {
 
-    $action = $_POST['action'] ?? '';
+    $action =
+        $_POST["action"] ?? "";
+
 
     $license_mode =
-        $_POST['license_mode'] ?? 'CALENDAR';
+        $_POST["license_mode"]
+        ??
+        "CALENDAR";
 
 
     /* =====================================================
        START / RESET LICENSE
     ===================================================== */
 
-    if ($action === 'start') {
-
-        /*
-         * Start and End are selected independently.
-         *
-         * HTML datetime-local gives:
-         *
-         * YYYY-MM-DDTHH:MM
-         */
+    if (
+        $action === "start"
+    ) {
 
         $start_input =
-            trim($_POST['start_datetime'] ?? '');
+            trim(
+                $_POST["start_datetime"] ?? ""
+            );
+
 
         $end_input =
-            trim($_POST['end_datetime'] ?? '');
+            trim(
+                $_POST["end_datetime"] ?? ""
+            );
 
 
-        if ($start_input === '' || $end_input === '') {
+        if (
+            $start_input === "" ||
+            $end_input === ""
+        ) {
 
             $message =
                 "Please select both Start Date/Time and End Date/Time.";
 
         }
+
         else {
 
             /*
-             * Convert T to space for MySQL DATETIME.
+             * Convert HTML datetime-local
+             * T into MySQL space.
              */
 
             $started_at =
-                str_replace('T', ' ', $start_input);
+                str_replace(
+                    "T",
+                    " ",
+                    $start_input
+                );
+
 
             $expires_at =
-                str_replace('T', ' ', $end_input);
+                str_replace(
+                    "T",
+                    " ",
+                    $end_input
+                );
 
 
             /*
-             * Convert selected dates to timestamps.
-             *
-             * PHP timezone is Asia/Kolkata.
+             * Convert to timestamps.
              */
 
             $start_timestamp =
-                strtotime($started_at);
+                strtotime(
+                    $started_at
+                );
+
 
             $end_timestamp =
-                strtotime($expires_at);
+                strtotime(
+                    $expires_at
+                );
 
 
             /*
-             * Check date/time validity.
+             * Validate dates.
              */
 
             if (
@@ -101,44 +650,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "Invalid Start or End Date/Time.";
 
             }
-            elseif ($end_timestamp <= $start_timestamp) {
+
+            elseif (
+                $end_timestamp <=
+                $start_timestamp
+            ) {
 
                 $message =
                     "End Date/Time must be later than Start Date/Time.";
 
             }
+
             else {
 
                 /*
-                 * Calculate total window duration.
-                 *
-                 * This is used for CALENDAR mode and
-                 * also stored for information in USAGE mode.
+                 * Calculate license window.
                  */
 
                 $duration_seconds =
-                    $end_timestamp - $start_timestamp;
+                    $end_timestamp -
+                    $start_timestamp;
 
 
                 /*
                  * START / RESET
-                 *
-                 * Both CALENDAR and USAGE now use
-                 * independently selected Start/End.
                  */
 
-                $stmt = $conn->prepare(
-                    "UPDATE licenses
-                     SET
-                        status = 'ON',
-                        license_mode = ?,
-                        duration_seconds = ?,
-                        used_seconds = 0,
-                        started_at = ?,
-                        expires_at = ?,
-                        last_seen_at = NULL
-                     WHERE user_id = ?"
-                );
+                $stmt =
+                    $conn->prepare(
+
+                        "UPDATE licenses
+                         SET
+                            status = 'ON',
+                            license_mode = ?,
+                            duration_seconds = ?,
+                            used_seconds = 0,
+                            started_at = ?,
+                            expires_at = ?,
+                            last_seen_at = NULL
+                         WHERE user_id = ?"
+                    );
 
 
                 if ($stmt) {
@@ -153,23 +704,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     );
 
 
-                    if ($stmt->execute()) {
+                    if (
+                        $stmt->execute()
+                    ) {
 
-                        if ($license_mode === 'USAGE') {
+                        if (
+                            $license_mode ===
+                            "USAGE"
+                        ) {
 
                             $label =
-                                'Actual application-use time';
+                                "Actual application-use time";
 
                         }
                         else {
 
                             $label =
-                                'Calendar time';
+                                "Calendar time";
                         }
 
 
                         $message =
-                            "$user_id started: $label from " .
+                            "$user_id started: " .
+                            "$label from " .
                             $started_at .
                             " to " .
                             $expires_at .
@@ -200,70 +757,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
        ON BUTTON
     ===================================================== */
 
-    elseif ($action === 'on') {
+    elseif (
+        $action === "on"
+    ) {
 
         /*
-         * ON changes ONLY status.
-         *
-         * It does not change the selected
-         * Start / End time.
+         * ON changes only status.
          */
 
-        $stmt = $conn->prepare(
-            "UPDATE licenses
-             SET status = 'ON'
-             WHERE user_id = ?"
-        );
+        $stmt =
+            $conn->prepare(
+
+                "UPDATE licenses
+                 SET status = 'ON'
+                 WHERE user_id = ?"
+            );
 
 
-        $stmt->bind_param(
-            "s",
-            $user_id
-        );
+        if ($stmt) {
+
+            $stmt->bind_param(
+                "s",
+                $user_id
+            );
 
 
-        $stmt->execute();
-
-        $stmt->close();
+            $stmt->execute();
 
 
-        $message =
-            "$user_id switched ON.";
+            $stmt->close();
+
+
+            $message =
+                "$user_id switched ON.";
+
+        }
+        else {
+
+            $message =
+                "Database statement error.";
+        }
     }
 
 
     /* =====================================================
-       REMOTE OFF BUTTON
+       REMOTE OFF
     ===================================================== */
 
-    elseif ($action === 'off') {
+    elseif (
+        $action === "off"
+    ) {
 
         /*
-         * OFF changes ONLY status.
+         * OFF changes only status.
          *
-         * Usage is NOT reset.
+         * Usage time is NOT reset.
          */
 
-        $stmt = $conn->prepare(
-            "UPDATE licenses
-             SET status = 'OFF'
-             WHERE user_id = ?"
-        );
+        $stmt =
+            $conn->prepare(
+
+                "UPDATE licenses
+                 SET status = 'OFF'
+                 WHERE user_id = ?"
+            );
 
 
-        $stmt->bind_param(
-            "s",
-            $user_id
-        );
+        if ($stmt) {
+
+            $stmt->bind_param(
+                "s",
+                $user_id
+            );
 
 
-        $stmt->execute();
-
-        $stmt->close();
+            $stmt->execute();
 
 
-        $message =
-            "$user_id switched OFF.";
+            $stmt->close();
+
+
+            $message =
+                "$user_id switched OFF.";
+
+        }
+        else {
+
+            $message =
+                "Database statement error.";
+        }
     }
 }
 
@@ -272,11 +854,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
    READ CURRENT LICENSE
 ========================================================= */
 
-$stmt = $conn->prepare(
-    "SELECT *
-     FROM licenses
-     WHERE user_id = ?"
-);
+$stmt =
+    $conn->prepare(
+
+        "SELECT *
+         FROM licenses
+         WHERE user_id = ?"
+    );
 
 
 $stmt->bind_param(
@@ -289,58 +873,78 @@ $stmt->execute();
 
 
 $license =
-    $stmt->get_result()->fetch_assoc();
+    $stmt
+    ->get_result()
+    ->fetch_assoc();
 
 
 $stmt->close();
 
 
-/* User does not exist */
+/* =========================================================
+   USER DOES NOT EXIST
+========================================================= */
 
 if (!$license) {
 
     die(
         "User ID not found: " .
-        htmlspecialchars($user_id)
+        htmlspecialchars(
+            $user_id,
+            ENT_QUOTES,
+            "UTF-8"
+        )
     );
 }
 
 
 $current_mode =
-    $license['license_mode'];
+    $license["license_mode"];
 
 
 /* =========================================================
-   DEFAULT VALUES FOR DATETIME INPUTS
+   DEFAULT DATETIME VALUES
 ========================================================= */
 
-$start_value = '';
+$start_value = "";
 
-$end_value = '';
+$end_value = "";
 
 
-if (!empty($license['started_at'])) {
+if (
+    !empty(
+        $license["started_at"]
+    )
+) {
 
     $start_value =
         date(
-            'Y-m-d\TH:i',
-            strtotime($license['started_at'])
+            "Y-m-d\TH:i",
+            strtotime(
+                $license["started_at"]
+            )
         );
 }
 
 
-if (!empty($license['expires_at'])) {
+if (
+    !empty(
+        $license["expires_at"]
+    )
+) {
 
     $end_value =
         date(
-            'Y-m-d\TH:i',
-            strtotime($license['expires_at'])
+            "Y-m-d\TH:i",
+            strtotime(
+                $license["expires_at"]
+            )
         );
 }
 
 
 /* =========================================================
-   HELPER FUNCTIONS
+   HTML ESCAPE
 ========================================================= */
 
 function h($value)
@@ -348,16 +952,19 @@ function h($value)
     return htmlspecialchars(
         (string)$value,
         ENT_QUOTES,
-        'UTF-8'
+        "UTF-8"
     );
 }
 
 
-/* Display duration */
+/* =========================================================
+   DISPLAY DURATION
+========================================================= */
 
 function show_duration($seconds)
 {
-    $seconds = (int)$seconds;
+    $seconds =
+        (int)$seconds;
 
 
     if (
@@ -391,7 +998,9 @@ function show_duration($seconds)
 }
 
 
-/* Display used time */
+/* =========================================================
+   DISPLAY USED TIME
+========================================================= */
 
 function show_used($seconds)
 {
@@ -405,40 +1014,89 @@ function show_used($seconds)
 
 ?>
 
+
 <!DOCTYPE html>
 
-<html>
+<html lang="en">
 
 <head>
 
 <meta charset="UTF-8">
 
-<title>License Admin V2</title>
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+>
+
+<title>
+License Admin V3
+</title>
 
 
 <style>
 
 body {
 
-    font-family: Arial, sans-serif;
+    font-family:
+        Arial,
+        sans-serif;
 
-    text-align: center;
+    text-align:
+        center;
 
-    margin: 30px;
+    margin:
+        30px;
 }
 
 
 .box {
 
-    max-width: 1150px;
+    max-width:
+        1150px;
 
-    margin: auto;
+    margin:
+        auto;
 
-    border: 1px solid #ccc;
+    border:
+        1px solid #ccc;
 
-    border-radius: 10px;
+    border-radius:
+        10px;
 
-    padding: 20px;
+    padding:
+        20px;
+}
+
+
+.topbar {
+
+    text-align:
+        right;
+
+    margin-bottom:
+        15px;
+}
+
+
+.logout {
+
+    display:
+        inline-block;
+
+    padding:
+        8px 15px;
+
+    background:
+        #dc3545;
+
+    color:
+        white;
+
+    text-decoration:
+        none;
+
+    border-radius:
+        6px;
 }
 
 
@@ -446,76 +1104,95 @@ input,
 select,
 button {
 
-    padding: 9px;
+    padding:
+        9px;
 
-    margin: 5px;
+    margin:
+        5px;
 }
 
 
 input[type="datetime-local"] {
 
-    min-width: 220px;
+    min-width:
+        220px;
 }
 
 
 button {
 
-    cursor: pointer;
+    cursor:
+        pointer;
 }
 
 
 table {
 
-    border-collapse: collapse;
+    border-collapse:
+        collapse;
 
-    width: 100%;
+    width:
+        100%;
 
-    margin-top: 20px;
+    margin-top:
+        20px;
 }
 
 
 th,
 td {
 
-    border: 1px solid #ccc;
+    border:
+        1px solid #ccc;
 
-    padding: 10px;
+    padding:
+        10px;
 }
 
 
 th {
 
-    background: #f2f2f2;
+    background:
+        #f2f2f2;
 }
 
 
 .message {
 
-    margin: 15px;
+    margin:
+        15px;
 
-    padding: 10px;
+    padding:
+        10px;
 
-    background: #eef7ee;
+    background:
+        #eef7ee;
 
-    border: 1px solid #b7d7b7;
+    border:
+        1px solid #b7d7b7;
 
-    border-radius: 5px;
+    border-radius:
+        5px;
 }
 
 
 .datetime-row {
 
-    margin-top: 15px;
+    margin-top:
+        15px;
 
-    margin-bottom: 15px;
+    margin-bottom:
+        15px;
 }
 
 
 .datetime-row label {
 
-    font-weight: bold;
+    font-weight:
+        bold;
 
-    margin-left: 10px;
+    margin-left:
+        10px;
 }
 
 </style>
@@ -526,10 +1203,28 @@ th {
 <body>
 
 
-<h1>License Control Panel — V3</h1>
+<h1>
+License Control Panel — V3
+</h1>
 
 
 <div class="box">
+
+
+<!-- =====================================================
+     LOGOUT
+===================================================== -->
+
+<div class="topbar">
+
+<a
+    class="logout"
+    href="admin.php?logout=1"
+>
+    LOGOUT
+</a>
+
+</div>
 
 
 <form method="post">
@@ -562,11 +1257,12 @@ Mode
 
 <select name="license_mode">
 
+
 <option
     value="CALENDAR"
-    <?= $current_mode === 'CALENDAR'
-        ? 'selected'
-        : '' ?>
+    <?= $current_mode === "CALENDAR"
+        ? "selected"
+        : "" ?>
 >
     Calendar time
 </option>
@@ -574,12 +1270,13 @@ Mode
 
 <option
     value="USAGE"
-    <?= $current_mode === 'USAGE'
-        ? 'selected'
-        : '' ?>
+    <?= $current_mode === "USAGE"
+        ? "selected"
+        : "" ?>
 >
     Actual application-use time
 </option>
+
 
 </select>
 
@@ -588,7 +1285,7 @@ Mode
 
 
 <!-- =====================================================
-     INDEPENDENT START DATE / TIME
+     START DATE / TIME
 ===================================================== -->
 
 <div class="datetime-row">
@@ -609,7 +1306,7 @@ Start Date &amp; Time
 
 
 <!-- =====================================================
-     INDEPENDENT END DATE / TIME
+     END DATE / TIME
 ===================================================== -->
 
 <div class="datetime-row">
@@ -678,17 +1375,29 @@ End Date &amp; Time
      MESSAGE
 ===================================================== -->
 
-<?php if ($message): ?>
+<?php
+
+if (
+    $message !== ""
+) {
+
+?>
 
 <div class="message">
 
 <strong>
+
 <?= h($message) ?>
+
 </strong>
 
 </div>
 
-<?php endif; ?>
+<?php
+
+}
+
+?>
 
 
 <!-- =====================================================
@@ -699,21 +1408,37 @@ End Date &amp; Time
 
 <tr>
 
-<th>User</th>
+<th>
+User
+</th>
 
-<th>Status</th>
+<th>
+Status
+</th>
 
-<th>Mode</th>
+<th>
+Mode
+</th>
 
-<th>Window</th>
+<th>
+Window
+</th>
 
-<th>Used</th>
+<th>
+Used
+</th>
 
-<th>Started</th>
+<th>
+Started
+</th>
 
-<th>Expires</th>
+<th>
+Expires
+</th>
 
-<th>Last Check</th>
+<th>
+Last Check
+</th>
 
 </tr>
 
@@ -721,24 +1446,30 @@ End Date &amp; Time
 <tr>
 
 <td>
-<?= h($license['user_id']) ?>
+<?= h(
+    $license["user_id"]
+) ?>
 </td>
 
 
 <td>
-<?= h($license['status']) ?>
+<?= h(
+    $license["status"]
+) ?>
 </td>
 
 
 <td>
-<?= h($license['license_mode']) ?>
+<?= h(
+    $license["license_mode"]
+) ?>
 </td>
 
 
 <td>
 <?= h(
     show_duration(
-        $license['duration_seconds']
+        $license["duration_seconds"]
     )
 ) ?>
 </td>
@@ -747,7 +1478,7 @@ End Date &amp; Time
 <td>
 <?= h(
     show_used(
-        $license['used_seconds']
+        $license["used_seconds"]
     )
 ) ?>
 </td>
@@ -755,24 +1486,24 @@ End Date &amp; Time
 
 <td>
 <?= h(
-    $license['started_at']
-    ?: '-'
+    $license["started_at"]
+    ?: "-"
 ) ?>
 </td>
 
 
 <td>
 <?= h(
-    $license['expires_at']
-    ?: '-'
+    $license["expires_at"]
+    ?: "-"
 ) ?>
 </td>
 
 
 <td>
 <?= h(
-    $license['last_seen_at']
-    ?: '-'
+    $license["last_seen_at"]
+    ?: "-"
 ) ?>
 </td>
 
@@ -787,3 +1518,9 @@ End Date &amp; Time
 </body>
 
 </html>
+
+<?php
+
+$conn->close();
+
+?>
