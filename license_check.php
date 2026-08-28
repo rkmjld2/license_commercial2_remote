@@ -1,3 +1,4 @@
+```php
 <?php
 
 date_default_timezone_set("Asia/Kolkata");
@@ -7,20 +8,25 @@ date_default_timezone_set("Asia/Kolkata");
  COMMERCIAL LICENSE SERVER
  license_check.php
 
- VERSION 3
+ VERSION 4
 
  Supports:
 
- 1. CALENDAR TIME
-    Independently selected START date/time
-    Independently selected END date/time
+ 1. CALENDAR
+    License is valid between started_at and expires_at.
 
- 2. ACTUAL APPLICATION-USE TIME
+ 2. USAGE
+    Actual application-use time is counted using used_seconds.
 
- All PHP/database times are handled in IST.
+ IMPORTANT:
+    expires_at is a HARD EXPIRY for BOTH modes.
+
+    Therefore:
+       CALENDAR + expired = OFF
+       USAGE    + expired = OFF
+
 ===========================================================
 */
-
 
 ob_start();
 
@@ -40,43 +46,40 @@ header(
 require_once "db.php";
 
 
-/*
- * Database connection timezone = IST.
- */
+/* =========================================================
+   DATABASE TIMEZONE
+========================================================= */
+
 $conn->query(
     "SET time_zone = '+05:30'"
 );
 
 
 /* =========================================================
-   JSON RESPONSE FUNCTION
+   JSON RESPONSE
 ========================================================= */
 
 function send_json($data)
 {
     while (ob_get_level() > 0) {
-
         ob_end_clean();
     }
-
 
     header(
         "Content-Type: application/json; charset=UTF-8"
     );
-
 
     echo json_encode(
         $data,
         JSON_UNESCAPED_SLASHES
     );
 
-
     exit;
 }
 
 
 /* =========================================================
-   DATABASE CONNECTION CHECK
+   DATABASE CHECK
 ========================================================= */
 
 if (
@@ -85,11 +88,8 @@ if (
 ) {
 
     send_json([
-
         "success" => false,
-
         "status" => "OFF",
-
         "message" =>
             "Database connection is not available."
     ]);
@@ -109,11 +109,8 @@ $user_id =
 if ($user_id === "") {
 
     send_json([
-
         "success" => false,
-
         "status" => "OFF",
-
         "message" =>
             "Missing USER_ID"
     ]);
@@ -149,11 +146,8 @@ $stmt = $conn->prepare(
 if (!$stmt) {
 
     send_json([
-
         "success" => false,
-
         "status" => "OFF",
-
         "message" =>
             "Database statement error."
     ]);
@@ -170,13 +164,9 @@ if (!$stmt->execute()) {
 
     $stmt->close();
 
-
     send_json([
-
         "success" => false,
-
         "status" => "OFF",
-
         "message" =>
             "Database query failed."
     ]);
@@ -191,17 +181,16 @@ $result =
    UNKNOWN USER
 ========================================================= */
 
-if ($result->num_rows === 0) {
+if (
+    !$result ||
+    $result->num_rows === 0
+) {
 
     $stmt->close();
 
-
     send_json([
-
         "success" => false,
-
         "status" => "OFF",
-
         "message" =>
             "Unknown USER_ID"
     ]);
@@ -236,434 +225,477 @@ $mode =
 
 
 $duration =
-    (int)$row["duration_seconds"];
+    max(
+        0,
+        (int)$row["duration_seconds"]
+    );
 
 
 $used =
-    (int)$row["used_seconds"];
+    max(
+        0,
+        (int)$row["used_seconds"]
+    );
 
 
-/*
- * Current real time.
- *
- * time() is timezone-independent Unix time.
- */
 $now =
     time();
 
 
 /* =========================================================
-   FINAL STATUS
+   START / END TIMESTAMPS
 ========================================================= */
 
-$status = "OFF";
+$started_timestamp = false;
+
+$expires_timestamp = false;
 
 
-/* =========================================================
-   CALENDAR MODE
-========================================================= */
+if (
+    !empty($row["started_at"])
+) {
 
-if ($mode === "CALENDAR") {
-
-
-    /*
-     * We need both start and end.
-     */
-
-    $started_timestamp = false;
-
-    $expires_timestamp = false;
+    $started_timestamp =
+        strtotime(
+            $row["started_at"]
+        );
+}
 
 
-    if (!empty($row["started_at"])) {
+if (
+    !empty($row["expires_at"])
+) {
 
-        $started_timestamp =
-            strtotime(
-                $row["started_at"]
-            );
-    }
-
-
-    if (!empty($row["expires_at"])) {
-
-        $expires_timestamp =
-            strtotime(
-                $row["expires_at"]
-            );
-    }
-
-
-    /*
-     * -----------------------------------------------------
-     * INVALID SCHEDULE
-     * -----------------------------------------------------
-     */
-
-    if (
-        $started_timestamp === false ||
-        $expires_timestamp === false
-    ) {
-
-        $status = "OFF";
-
-        $message =
-            "Calendar start/end time is not configured.";
-    }
-
-
-    /*
-     * -----------------------------------------------------
-     * BEFORE START
-     * -----------------------------------------------------
-     */
-
-    elseif ($now < $started_timestamp) {
-
-        /*
-         * License has been scheduled but
-         * its start time has not arrived.
-         */
-
-        $status = "OFF";
-
-        $message =
-            "License scheduled to start at "
-            . date(
-                "Y-m-d H:i:s",
-                $started_timestamp
-            );
-    }
-
-
-    /*
-     * -----------------------------------------------------
-     * ACTIVE PERIOD
-     * -----------------------------------------------------
-     */
-
-    elseif (
-        $now >= $started_timestamp &&
-        $now < $expires_timestamp &&
-        $db_status === "ON"
-    ) {
-
-        $status = "ON";
-
-        $message =
-            "Application authorized";
-
-
-        /*
-         * Record last license check.
-         */
-
-        $stmt2 =
-            $conn->prepare(
-
-                "UPDATE licenses
-
-                 SET last_seen_at = NOW()
-
-                 WHERE user_id = ?"
-            );
-
-
-        if ($stmt2) {
-
-            $stmt2->bind_param(
-                "s",
-                $user_id
-            );
-
-            $stmt2->execute();
-
-            $stmt2->close();
-        }
-    }
-
-
-    /*
-     * -----------------------------------------------------
-     * END TIME REACHED
-     * -----------------------------------------------------
-     */
-
-    elseif (
-        $now >= $expires_timestamp
-    ) {
-
-        $status = "OFF";
-
-        $message =
-            "License expired";
-
-
-        /*
-         * Automatically turn license OFF.
-         */
-
-        $stmt2 =
-            $conn->prepare(
-
-                "UPDATE licenses
-
-                 SET
-                    status = 'OFF',
-                    last_seen_at = NOW()
-
-                 WHERE user_id = ?"
-            );
-
-
-        if ($stmt2) {
-
-            $stmt2->bind_param(
-                "s",
-                $user_id
-            );
-
-            $stmt2->execute();
-
-            $stmt2->close();
-        }
-    }
-
-
-    /*
-     * -----------------------------------------------------
-     * REMOTE OFF
-     * -----------------------------------------------------
-     */
-
-    elseif ($db_status !== "ON") {
-
-        $status = "OFF";
-
-        $message =
-            "Application disabled";
-    }
+    $expires_timestamp =
+        strtotime(
+            $row["expires_at"]
+        );
 }
 
 
 /* =========================================================
-   ACTUAL APPLICATION-USE MODE
+   DEFAULT VALUES
 ========================================================= */
 
-elseif ($mode === "USAGE") {
+$status = "OFF";
+
+$message = "Application disabled";
+
+$remaining = 0;
+
+
+/* =========================================================
+   BASIC DATE VALIDATION
+========================================================= */
+
+if (
+    $started_timestamp === false ||
+    $expires_timestamp === false
+) {
+
+    $status = "OFF";
+
+    $message =
+        "License start/end time is not configured.";
+
+}
+
+
+/* =========================================================
+   HARD EXPIRY
+   ========================================================
+
+   THIS IS THE IMPORTANT FIX.
+
+   expires_at is checked BEFORE CALENDAR OR USAGE.
+
+   If current time has reached expires_at,
+   license is OFF regardless of database status.
+
+========================================================= */
+
+elseif (
+    $now >= $expires_timestamp
+) {
+
+    $status = "OFF";
+
+    $remaining = 0;
+
+    $message =
+        "License expired.";
 
 
     /*
-     * The license must be ON.
+     * Permanently switch database status OFF.
      */
 
-    if ($db_status === "ON") {
+    $stmt2 =
+        $conn->prepare(
+
+            "UPDATE licenses
+
+             SET
+                status = 'OFF',
+                last_seen_at = NOW()
+
+             WHERE user_id = ?"
+        );
 
 
-        $delta = null;
+    if ($stmt2) {
 
+        $stmt2->bind_param(
+            "s",
+            $user_id
+        );
+
+        $stmt2->execute();
+
+        $stmt2->close();
+    }
+
+}
+
+
+/* =========================================================
+   BEFORE START
+========================================================= */
+
+elseif (
+    $now < $started_timestamp
+) {
+
+    $status = "OFF";
+
+    $remaining =
+        0;
+
+    $message =
+        "License has not started yet.";
+
+}
+
+
+/* =========================================================
+   ACTIVE LICENSE
+========================================================= */
+
+else {
+
+    /* =====================================================
+       CALENDAR MODE
+    ===================================================== */
+
+    if (
+        $mode === "CALENDAR"
+    ) {
 
         /*
-         * Calculate time since previous check.
-         */
-
-        if (!empty($row["last_seen_at"])) {
-
-            $last_seen_timestamp =
-                strtotime(
-                    $row["last_seen_at"]
-                );
-
-
-            if (
-                $last_seen_timestamp !== false
-            ) {
-
-                $delta =
-                    $now -
-                    $last_seen_timestamp;
-            }
-        }
-
-
-        /*
-         * Count reasonable active-use intervals.
+         * Calendar mode uses real calendar time.
          */
 
         if (
-            $delta !== null &&
-            $delta > 0 &&
-            $delta <= 120
+            $db_status === "ON"
         ) {
 
-            $used += $delta;
-        }
+            $status = "ON";
 
-
-        /*
-         * Maximum duration reached.
-         */
-
-        if ($used >= $duration) {
-
-            $used =
-                $duration;
-
-            $status =
-                "OFF";
-
-
-            $stmt2 =
-                $conn->prepare(
-
-                    "UPDATE licenses
-
-                     SET
-                        status = 'OFF',
-                        used_seconds = ?,
-                        last_seen_at = NOW()
-
-                     WHERE user_id = ?"
+            $remaining =
+                max(
+                    0,
+                    $expires_timestamp - $now
                 );
-
-
-            if ($stmt2) {
-
-                $stmt2->bind_param(
-                    "is",
-                    $used,
-                    $user_id
-                );
-
-                $stmt2->execute();
-
-                $stmt2->close();
-            }
-
-
-            $message =
-                "Application-use time exhausted.";
-        }
-
-
-        /*
-         * Still available.
-         */
-
-        else {
-
-            $status =
-                "ON";
-
-
-            $stmt2 =
-                $conn->prepare(
-
-                    "UPDATE licenses
-
-                     SET
-                        used_seconds = ?,
-                        last_seen_at = NOW()
-
-                     WHERE user_id = ?"
-                );
-
-
-            if ($stmt2) {
-
-                $stmt2->bind_param(
-                    "is",
-                    $used,
-                    $user_id
-                );
-
-                $stmt2->execute();
-
-                $stmt2->close();
-            }
-
 
             $message =
                 "Application authorized";
+
+
+            /*
+             * Record last check.
+             */
+
+            $stmt2 =
+                $conn->prepare(
+
+                    "UPDATE licenses
+
+                     SET last_seen_at = NOW()
+
+                     WHERE user_id = ?"
+                );
+
+
+            if ($stmt2) {
+
+                $stmt2->bind_param(
+                    "s",
+                    $user_id
+                );
+
+                $stmt2->execute();
+
+                $stmt2->close();
+            }
+
+        }
+        else {
+
+            $status = "OFF";
+
+            $remaining = 0;
+
+            $message =
+                "Application disabled.";
         }
     }
 
 
-    /*
-     * Remote OFF.
-     */
+    /* =====================================================
+       USAGE MODE
+    ===================================================== */
+
+    elseif (
+        $mode === "USAGE"
+    ) {
+
+        /*
+         * Remote administrator must have license ON.
+         */
+
+        if (
+            $db_status !== "ON"
+        ) {
+
+            $status =
+                "OFF";
+
+            $remaining =
+                0;
+
+            $message =
+                "Application disabled.";
+
+        }
+
+        else {
+
+            /*
+             * Calculate application-use time.
+             */
+
+            $delta = 0;
+
+
+            if (
+                !empty(
+                    $row["last_seen_at"]
+                )
+            ) {
+
+                $last_seen_timestamp =
+                    strtotime(
+                        $row["last_seen_at"]
+                    );
+
+
+                if (
+                    $last_seen_timestamp !== false
+                ) {
+
+                    $delta =
+                        $now -
+                        $last_seen_timestamp;
+                }
+            }
+
+
+            /*
+             * Accept only reasonable intervals.
+             *
+             * This prevents a long computer-off period
+             * from being counted as application use.
+             */
+
+            if (
+                $delta > 0 &&
+                $delta <= 120
+            ) {
+
+                $used += $delta;
+            }
+
+
+            /*
+             * Never allow used time above duration.
+             */
+
+            if (
+                $used >= $duration
+            ) {
+
+                $used =
+                    $duration;
+
+                $status =
+                    "OFF";
+
+                $remaining =
+                    0;
+
+                $message =
+                    "Application-use time exhausted.";
+
+
+                $stmt2 =
+                    $conn->prepare(
+
+                        "UPDATE licenses
+
+                         SET
+                            status = 'OFF',
+                            used_seconds = ?,
+                            last_seen_at = NOW()
+
+                         WHERE user_id = ?"
+                    );
+
+
+                if ($stmt2) {
+
+                    $stmt2->bind_param(
+                        "is",
+                        $used,
+                        $user_id
+                    );
+
+                    $stmt2->execute();
+
+                    $stmt2->close();
+                }
+
+            }
+
+            else {
+
+                /*
+                 * License still has usage time.
+                 */
+
+                $status =
+                    "ON";
+
+
+                $remaining =
+                    max(
+                        0,
+                        $duration - $used
+                    );
+
+
+                $message =
+                    "Application authorized";
+
+
+                /*
+                 * Save usage time and last check.
+                 */
+
+                $stmt2 =
+                    $conn->prepare(
+
+                        "UPDATE licenses
+
+                         SET
+                            used_seconds = ?,
+                            last_seen_at = NOW()
+
+                         WHERE user_id = ?"
+                    );
+
+
+                if ($stmt2) {
+
+                    $stmt2->bind_param(
+                        "is",
+                        $used,
+                        $user_id
+                    );
+
+                    $stmt2->execute();
+
+                    $stmt2->close();
+                }
+            }
+        }
+    }
+
+
+    /* =====================================================
+       INVALID MODE
+    ===================================================== */
 
     else {
 
         $status =
             "OFF";
 
+        $remaining =
+            0;
 
         $message =
-            "Application disabled";
+            "Invalid license mode.";
     }
 }
 
 
 /* =========================================================
-   UNKNOWN MODE
+   FINAL SAFETY
 ========================================================= */
 
-else {
+/*
+ * Never return ON with zero remaining time.
+ */
+
+if (
+    $status === "ON" &&
+    $remaining <= 0
+) {
 
     $status =
         "OFF";
 
+    $remaining =
+        0;
 
     $message =
-        "Invalid license mode.";
-}
+        "License expired.";
 
 
-/* =========================================================
-   CALCULATE REMAINING TIME
-========================================================= */
+    $stmt2 =
+        $conn->prepare(
 
-$remaining = null;
+            "UPDATE licenses
 
+             SET
+                status = 'OFF',
+                last_seen_at = NOW()
 
-/* ---------------------------------------------------------
-   CALENDAR
---------------------------------------------------------- */
-
-if (
-    $status === "ON" &&
-    $mode === "CALENDAR"
-) {
-
-    if (
-        $expires_timestamp !== false
-    ) {
-
-        $remaining =
-            max(
-                0,
-                $expires_timestamp -
-                $now
-            );
-    }
-}
-
-
-/* ---------------------------------------------------------
-   USAGE
---------------------------------------------------------- */
-
-elseif (
-    $status === "ON" &&
-    $mode === "USAGE"
-) {
-
-    $remaining =
-        max(
-            0,
-            $duration -
-            $used
+             WHERE user_id = ?"
         );
+
+
+    if ($stmt2) {
+
+        $stmt2->bind_param(
+            "s",
+            $user_id
+        );
+
+        $stmt2->execute();
+
+        $stmt2->close();
+    }
 }
 
 
@@ -709,3 +741,4 @@ send_json([
 ]);
 
 ?>
+```
